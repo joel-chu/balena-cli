@@ -1,5 +1,5 @@
 /*
-Copyright 2016-2019 Balena Ltd.
+Copyright 2016-2020 Balena Ltd.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -109,6 +109,7 @@ export const push: CommandDefinition<
 		emulated?: boolean;
 		dockerfile?: string; // DeviceDeployOptions.dockerfilePath (alternative Dockerfile)
 		nocache?: boolean;
+		'nocompose-check'?: boolean;
 		'registry-secrets'?: string;
 		nolive?: boolean;
 		detached?: boolean;
@@ -190,6 +191,12 @@ export const push: CommandDefinition<
 			boolean: true,
 		},
 		{
+			signature: 'nocompose-check',
+			description:
+				"Disable check for 'docker-compose.yml' file in parent source folder",
+			boolean: true,
+		},
+		{
 			signature: 'registry-secrets',
 			alias: 'R',
 			parameter: 'secrets.yml|.json',
@@ -254,9 +261,7 @@ export const push: CommandDefinition<
 		const remote = await import('../utils/remote-build');
 		const deviceDeploy = await import('../utils/device/deploy');
 		const { checkLoggedIn } = await import('../utils/patterns');
-		const { validateSpecifiedDockerfile, getRegistrySecrets } = await import(
-			'../utils/compose_ts'
-		);
+		const { validateProjectDirectory } = await import('../utils/compose_ts');
 		const { BuildError } = await import('../utils/device/errors');
 
 		const appOrDevice: string | null =
@@ -270,14 +275,14 @@ export const push: CommandDefinition<
 			console.error(`[debug] Using ${source} as build source`);
 		}
 
-		const dockerfilePath = validateSpecifiedDockerfile(
-			source,
-			options.dockerfile,
-		);
-
-		const registrySecrets = await getRegistrySecrets(
+		const { dockerfilePath, registrySecrets } = await validateProjectDirectory(
 			sdk,
-			options['registry-secrets'],
+			{
+				dockerfilePath: options.dockerfile,
+				noComposeCheck: options['nocompose-check'] || false,
+				projectPath: source,
+				registrySecretsPath: options['registry-secrets'],
+			},
 		);
 
 		const buildTarget = getBuildTarget(appOrDevice);
@@ -349,6 +354,7 @@ export const push: CommandDefinition<
 						dockerfilePath,
 						registrySecrets,
 						nocache: options.nocache || false,
+						noComposeCheck: options['nocompose-check'] || false,
 						nolive: options.nolive || false,
 						detached: options.detached || false,
 						services: servicesToDisplay,

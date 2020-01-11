@@ -1,6 +1,6 @@
 /**
  * @license
- * Copyright 2018 Balena Ltd.
+ * Copyright 2018-2020 Balena Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,11 @@ import * as semver from 'resin-semver';
 import { Readable } from 'stream';
 
 import { BALENA_ENGINE_TMP_PATH } from '../../config';
-import { checkBuildSecretsRequirements, makeBuildTasks } from '../compose_ts';
+import {
+	checkBuildSecretsRequirements,
+	loadProject,
+	makeBuildTasks,
+} from '../compose_ts';
 import { workaroundWindowsDnsIssue } from '../helpers';
 import Logger = require('../logger');
 import { DeviceAPI, DeviceInfo } from './api';
@@ -49,6 +53,7 @@ export interface DeviceDeployOptions {
 	dockerfilePath?: string;
 	registrySecrets: RegistrySecrets;
 	nocache: boolean;
+	noComposeCheck: boolean;
 	nolive: boolean;
 	detached: boolean;
 	services?: string[];
@@ -58,11 +63,6 @@ export interface DeviceDeployOptions {
 
 interface ParsedEnvironment {
 	[serviceName: string]: { [key: string]: string };
-}
-
-async function checkSource(source: string): Promise<boolean> {
-	const { fs } = await import('mz');
-	return (await fs.exists(source)) && (await fs.stat(source)).isDirectory();
 }
 
 async function environmentFromInput(
@@ -118,14 +118,9 @@ async function environmentFromInput(
 }
 
 export async function deployToDevice(opts: DeviceDeployOptions): Promise<void> {
-	const { loadProject, tarDirectory } = await import('../compose');
+	const { tarDirectory } = await import('../compose');
 	const { exitWithExpectedError } = await import('../patterns');
-
 	const { displayDeviceLogs } = await import('./logs');
-
-	if (!(await checkSource(opts.source))) {
-		exitWithExpectedError(`Could not access source directory: ${opts.source}`);
-	}
 
 	const api = new DeviceAPI(globalLogger, opts.deviceHost);
 
@@ -174,13 +169,12 @@ export async function deployToDevice(opts: DeviceDeployOptions): Promise<void> {
 
 	globalLogger.logInfo(`Starting build on device ${opts.deviceHost}`);
 
-	const project = await loadProject(
-		globalLogger,
-		opts.source, // project path
-		'local', // project name
-		undefined, // name of a pre-built image
-		opts.dockerfilePath, // alternative Dockerfile; OK to be undefined
-	);
+	const project = await loadProject(globalLogger, {
+		dockerfilePath: opts.dockerfilePath,
+		noComposeCheck: opts.noComposeCheck,
+		projectName: 'local',
+		projectPath: opts.source,
+	});
 
 	// Attempt to attach to the device's docker daemon
 	const docker = connectToDocker(
